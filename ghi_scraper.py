@@ -98,7 +98,7 @@ def parse_since(since: str) -> datetime:
         return datetime.fromisoformat(since)
     except ValueError:
         pass
-    match = re.fullmatch(r"(\d+)([wdHM])", since)
+    match = re.fullmatch(r"(\d+)([wdh])", since)
     if not match:
         sys.exit(f"'{since}' is not a valid date")
 
@@ -108,10 +108,8 @@ def parse_since(since: str) -> datetime:
         delta = timedelta(weeks=value)
     elif unit == "d":
         delta = timedelta(days=value)
-    elif unit == "H":
+    elif unit == "h":
         delta = timedelta(hours=value)
-    elif unit == "M":
-        delta = timedelta(minutes=value)
     else:
         raise NotImplementedError
 
@@ -124,7 +122,7 @@ def main() -> int:
         description=__doc__)
 
     parser.add_argument("--since",
-                        help="Import issues updated since DATE. Date can be either an ISO8601 date or a number followed by 'w', 'd', 'H', 'M' (weeks, days, hours, minutes)",
+                        help="Import issues updated since DATE. Date can be either an ISO8601 date or a number followed by 'w', 'd', 'h' (weeks, days, hours)",
                         metavar="DATE")
     parser.add_argument("project", help="Project as a OWNER/REPO format")
     parser.add_argument("out_dir", help="Where to write the JSON files")
