@@ -44,8 +44,9 @@ def scrap_page(info: ScrapInfo, page: int) -> bool:
 
     headers = {
         "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
     }
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
 
     params = {
         "state": "all",
@@ -129,14 +130,17 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if GITHUB_TOKEN == "":
-        sys.exit("You must define the $GITHUB_TOKEN environment variable")
-
     out_dir = Path(args.out_dir)
     if not out_dir.is_dir():
         sys.exit(f"{out_dir} is not a directory")
 
     setup_logger()
+
+    if GITHUB_TOKEN == "":
+        logger.warning("$GITHUB_TOKEN environment variable not set, you might get rate-limited")
+    else:
+        logger.info("$GITHUB_TOKEN is defined")
+
     if args.since:
         since = parse_since(args.since)
     else:

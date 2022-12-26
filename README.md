@@ -12,7 +12,7 @@ pipx install git+https://github.com/agateau/ghi-scraper
 
 ## Usage
 
-Create a GitHub token (it only needs the "read repo" permission), store it in `$GITHUB_TOKEN`.
+To avoid getting rate-limited: create a GitHub token (it only needs the "read repo" permission), store it in `$GITHUB_TOKEN`.
 
 Run the scraper:
 
