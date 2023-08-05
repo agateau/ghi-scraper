@@ -9,22 +9,23 @@ import os
 import re
 import sys
 
-from itertools import count
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from typing import Any, Dict, Optional
 
-import httpx
-
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-
-PAGE_SIZE = 100
+from gql import Client, gql
+from gql.transport.aiohttp import AIOHTTPTransport, log as gql_transport_logger
 
 logger = logging.getLogger()
 
 LOG_FORMAT = "%(asctime)s %(levelname)s: %(message)s"
+
+SCHEMA_PATH = Path(__file__).parent / "github-schema.graphql"
+
+FORMAT_KEY = "_format"
+FORMAT = 2
 
 
 @dataclass
@@ -38,34 +39,75 @@ def is_pull_request(dct: Dict[str, Any]) -> bool:
     return "pull_request" in dct
 
 
-def scrap_page(info: ScrapInfo, page: int) -> bool:
-    logger.info("Scraping page %d", page)
-    url = f"https://api.github.com/repos/{info.project}/issues"
+def scrap_page(client: Client, info: ScrapInfo, cursor: str|None) -> str|None:
+    logger.info("Scraping page %s", cursor)
+    query = gql(
+        """
+        query($owner: String!, $name: String!, $since: DateTime, $issues_after: String) {
+            repository(owner: $owner, name: $name) {
+            issues(after: $issues_after, filterBy: { since: $since }, first: 20) {
+                    pageInfo {
+                        endCursor
+                        hasNextPage
+                    }
+                    edges {
+                        node {
+                            number
+                            title
+                            url
+                            body
+                            state
+                            createdAt
+                            updatedAt
+                            author {
+                                login
+                                url
+                            }
+                            labels(first: 20) {
+                                edges {
+                                    node {
+                                        name
+                                    }
+                                }
+                            }
+                            comments(first: 100) {
+                                edges {
+                                    node {
+                                        author {
+                                            login
+                                            url
+                                        }
+                                        createdAt
+                                        lastEditedAt
+                                        body
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+    )
 
-    headers = {
-        "Accept": "application/vnd.github+json",
-    }
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+    owner, name = info.project.split("/")
 
     params = {
-        "state": "all",
-        "per_page": PAGE_SIZE,
-        "page": page,
+        "owner": owner,
+        "name": name,
+        "since": info.since.isoformat() if info.since else None,
+        "issues_after": cursor,
     }
-    if info.since:
-        params["since"] = info.since.isoformat()
 
-    response = httpx.get(url, headers=headers, params=params)
-    lst = response.json()
-    assert isinstance(lst, list)
-    if not lst:
-        logger.info("Done")
-        return False
+    result = client.execute(query, variable_values=params)
 
-    logger.info("Found %d item(s)", len(lst))
-    for dct in lst:
-        sub_dir = "pulls" if is_pull_request(dct) else "issues"
+    edges = result["repository"]["issues"]["edges"]
+    page_info = result["repository"]["issues"]["pageInfo"]
+    for edge in edges:
+        dct = edge["node"]
+        dct[FORMAT_KEY] = FORMAT
+        sub_dir = "issues"
         item_dir = info.out_dir / sub_dir
         item_dir.mkdir(exist_ok=True)
         item_id = dct["number"]
@@ -75,23 +117,29 @@ def scrap_page(info: ScrapInfo, page: int) -> bool:
         logging.info("%s #%d: %s", sub_dir, item_id, dct["title"])
         item_path.write_text(text)
 
-    return len(lst) == PAGE_SIZE
+    if page_info["hasNextPage"]:
+        return page_info["endCursor"]
+    return None
 
 
-def scrap(info: ScrapInfo) -> None:
+def scrap(client: Client, info: ScrapInfo) -> None:
     if info.since:
         logger.info("Starting, scraping all issues for %s since %s", info.project, info.since)
     else:
         logger.info("Starting, scraping issues for %s", info.project)
-    for page in count(1):
-        if not scrap_page(info, page):
+    cursor = None
+    while True:
+        cursor = scrap_page(client, info, cursor)
+        if cursor is None:
             return
 
 
 def setup_logger():
-    logging.basicConfig(level=logging.DEBUG,
+    logging.basicConfig(level=logging.INFO,
                         format=LOG_FORMAT,
                         datefmt="%H:%M:%S")
+    # Mute GQL transport a bit: it logs all responses at INFO level
+    gql_transport_logger.setLevel(logging.WARNING)
 
 
 def parse_since(since: str) -> datetime:
@@ -117,6 +165,15 @@ def parse_since(since: str) -> datetime:
     return datetime.now() - delta
 
 
+def create_client(github_token: str) -> Client:
+    schema = SCHEMA_PATH.read_text()
+
+    transport = AIOHTTPTransport(url="https://api.github.com/graphql", headers={
+        "Authorization": f"Bearer {github_token}"
+    })
+    return Client(transport=transport, schema=schema)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -136,17 +193,19 @@ def main() -> int:
 
     setup_logger()
 
-    if GITHUB_TOKEN == "":
-        logger.warning("$GITHUB_TOKEN environment variable not set, you might get rate-limited")
-    else:
-        logger.info("$GITHUB_TOKEN is defined")
+    github_token = os.getenv("GITHUB_TOKEN", "")
+    if github_token == "":
+        logger.error("$GITHUB_TOKEN environment variable not set")
+        return 1
+
+    client = create_client(github_token)
 
     if args.since:
         since = parse_since(args.since)
     else:
         since = None
     scrap_info = ScrapInfo(args.project, out_dir, since)
-    scrap(scrap_info)
+    scrap(client, scrap_info)
 
     return 0
 

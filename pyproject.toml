@@ -9,7 +9,7 @@ packages = [{include = "ghi_scraper"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-httpx = "^0.23.1"
+gql = { version = "^3.4.1", extras = ["aiohttp"] }
 
 [tool.poetry.scripts]
 ghi-scraper = "ghi_scraper.__main__:main"
