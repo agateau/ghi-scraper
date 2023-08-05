@@ -8,15 +8,14 @@ import logging
 import os
 import re
 import sys
-
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-
 from typing import Any, Dict, Optional
 
 from gql import Client, gql
-from gql.transport.aiohttp import AIOHTTPTransport, log as gql_transport_logger
+from gql.transport.aiohttp import AIOHTTPTransport
+from gql.transport.aiohttp import log as gql_transport_logger
 
 logger = logging.getLogger()
 
@@ -39,7 +38,7 @@ def is_pull_request(dct: Dict[str, Any]) -> bool:
     return "pull_request" in dct
 
 
-def scrap_page(client: Client, info: ScrapInfo, cursor: str|None) -> str|None:
+def scrap_page(client: Client, info: ScrapInfo, cursor: str | None) -> str | None:
     logger.info("Scraping page %s", cursor)
     query = gql(
         """
@@ -124,7 +123,9 @@ def scrap_page(client: Client, info: ScrapInfo, cursor: str|None) -> str|None:
 
 def scrap(client: Client, info: ScrapInfo) -> None:
     if info.since:
-        logger.info("Starting, scraping all issues for %s since %s", info.project, info.since)
+        logger.info(
+            "Starting, scraping all issues for %s since %s", info.project, info.since
+        )
     else:
         logger.info("Starting, scraping issues for %s", info.project)
     cursor = None
@@ -135,9 +136,7 @@ def scrap(client: Client, info: ScrapInfo) -> None:
 
 
 def setup_logger():
-    logging.basicConfig(level=logging.INFO,
-                        format=LOG_FORMAT,
-                        datefmt="%H:%M:%S")
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt="%H:%M:%S")
     # Mute GQL transport a bit: it logs all responses at INFO level
     gql_transport_logger.setLevel(logging.WARNING)
 
@@ -168,20 +167,23 @@ def parse_since(since: str) -> datetime:
 def create_client(github_token: str) -> Client:
     schema = SCHEMA_PATH.read_text()
 
-    transport = AIOHTTPTransport(url="https://api.github.com/graphql", headers={
-        "Authorization": f"Bearer {github_token}"
-    })
+    transport = AIOHTTPTransport(
+        url="https://api.github.com/graphql",
+        headers={"Authorization": f"Bearer {github_token}"},
+    )
     return Client(transport=transport, schema=schema)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=__doc__)
+        formatter_class=argparse.RawDescriptionHelpFormatter, description=__doc__
+    )
 
-    parser.add_argument("--since",
-                        help="Import issues updated since DATE. Date can be either an ISO8601 date or a number followed by 'w', 'd', 'h' (weeks, days, hours)",
-                        metavar="DATE")
+    parser.add_argument(
+        "--since",
+        help="Import issues updated since DATE. Date can be either an ISO8601 date or a number followed by 'w', 'd', 'h' (weeks, days, hours)",
+        metavar="DATE",
+    )
     parser.add_argument("project", help="Project as a OWNER/REPO format")
     parser.add_argument("out_dir", help="Where to write the JSON files")
 
